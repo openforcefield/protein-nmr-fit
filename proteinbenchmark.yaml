@@ -1,0 +1,29 @@
+name: openff-proteinbenchmark
+channels:
+  - conda-forge
+  - openeye
+dependencies:
+  - pip
+  - python<3.12
+    
+  # System setup
+  - pip:
+    - git+https://github.com/deGrootLab/pmx@develop
+    - git+https://github.com/Electrostatics/pdb2pqr@master#egg=pdb2pqr
+
+  # MM calculations
+  - ambertools
+  - openeye-toolkits
+  - openff-forcefields
+  - openff-toolkit>=0.16.0
+  - openff-units
+  - openmm>=8.1.1
+  - openmmforcefields>=0.12.0
+  - openmmtools
+
+  # Analysis
+  - loos==4.1
+  - pandas
+  - pymol-open-source
+  - seaborn
+
