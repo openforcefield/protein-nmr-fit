@@ -176,9 +176,9 @@ class ReweightReference:
             target_observable_df = pandas.DataFrame()
             target_uncorrelated_observable_df = pandas.DataFrame()
 
-            for replica in mbar_df["Replica"].unique():
-                replica_mbar_df = mbar_df[mbar_df["Replica"] == replica]
-                for window in replica_mbar_df["Window"].unique():
+            for window in mbar_df["Window"].unique():
+                window_mbar_df = mbar_df[mbar_df["Window"] == window]
+                for replica in window_mbar_df["Replica"].unique():
                     window_uncorrelated_sample_indices = mbar_uncorrelated_df.loc[
                         (mbar_uncorrelated_df["Replica"] == replica)
                         & (mbar_uncorrelated_df["Window"] == window),

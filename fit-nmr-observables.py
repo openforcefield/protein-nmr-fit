@@ -99,11 +99,11 @@ class NMRFitter:
             if replica is None:
                 mbar_samples_path = Path(
                     target_directory,
-                    f"{target}-{force_field_name}-mbar-0.7-samples.dat",
+                    f"{target}-{force_field_name}-mbar-samples.dat",
                 )
                 mbar_uncorrelated_samples_path = Path(
                     target_directory,
-                    f"{target}-{force_field_name}-mbar-0.7-uncorrelated-samples.dat",
+                    f"{target}-{force_field_name}-mbar-uncorrelated-samples.dat",
                 )
             else:
                 mbar_samples_path = Path(
@@ -294,12 +294,12 @@ class NMRFitter:
                 "analysis",
             )
 
-            for replica in target_samples_df["Replica"].unique():
-                replica_samples_df = target_samples_df[
-                    target_samples_df["Replica"] == replica
+            for window in target_samples_df["Window"].unique():
+                window_samples_df = target_samples_df[
+                    target_samples_df["Window"] == window
                 ]
 
-                for window in replica_samples_df["Window"].unique():
+                for replica in window_samples_df["Replica"].unique():
                     window_uncorrelated_sample_indices = (
                         target_uncorrelated_samples_df.loc[
                             (target_uncorrelated_samples_df["Replica"] == replica)
@@ -556,12 +556,12 @@ class NMRFitter:
             total_uncorrelated_sample_index = 0
 
             # Read dihedral angles for uncorrelated sample indices in each window
-            for replica in target_samples_df["Replica"].unique():
-                replica_samples_df = target_samples_df[
-                    target_samples_df["Replica"] == replica
+            for window in target_samples_df["Window"].unique():
+                window_samples_df = target_samples_df[
+                    target_samples_df["Window"] == window
                 ]
 
-                for window in replica_samples_df["Window"].unique():
+                for replica in window_samples_df["Replica"].unique():
                     window_uncorrelated_sample_indices = (
                         target_uncorrelated_samples_df.loc[
                             (target_uncorrelated_samples_df["Replica"] == replica)
@@ -1170,7 +1170,7 @@ def main(
 
         print("\nlog10_alpha CV_error_mean (StDev)   N_eff_mean (StDev)")
 
-        for i in numpy.arange(8.0, -2.1, -1):
+        for i in numpy.arange(8.0, -1.1, -1):
             cross_validation_error(i)
         cross_validation_error(-numpy.inf)
         return

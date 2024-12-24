@@ -298,12 +298,12 @@ class NMRFitter:
                     target_samples_df["Force Field"] == force_field
                 ]
 
-                for replica in force_field_samples_df["Replica"].unique():
-                    replica_samples_df = force_field_samples_df[
-                        force_field_samples_df["Replica"] == replica
+                for window in force_field_samples_df["Window"].unique():
+                    window_samples_df = force_field_samples_df[
+                        force_field_samples_df["Window"] == window
                     ]
 
-                    for window in replica_samples_df["Window"].unique():
+                    for replica in window_samples_df["Replica"].unique():
                         window_uncorrelated_sample_indices = (
                             target_uncorrelated_samples_df.loc[
                                 (target_uncorrelated_samples_df["Force Field"] == force_field)
@@ -572,12 +572,12 @@ class NMRFitter:
                     target_samples_df["Force Field"] == target_force_field
                 ]
 
-                for replica in force_field_samples_df["Replica"].unique():
-                    replica_samples_df = force_field_samples_df[
-                        force_field_samples_df["Replica"] == replica
+                for window in force_field_samples_df["Window"].unique():
+                    window_samples_df = force_field_samples_df[
+                        force_field_samples_df["Window"] == window
                     ]
 
-                    for window in replica_samples_df["Window"].unique():
+                    for replica in window_samples_df["Replica"].unique():
                         window_uncorrelated_sample_indices = (
                             target_uncorrelated_samples_df.loc[
                                 (target_uncorrelated_samples_df["Force Field"] == target_force_field)

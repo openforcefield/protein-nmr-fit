@@ -290,12 +290,12 @@ class NMRFitter:
                 "analysis",
             )
 
-            for replica in target_samples_df["Replica"].unique():
-                replica_samples_df = target_samples_df[
-                    target_samples_df["Replica"] == replica
+            for window in target_samples_df["Window"].unique():
+                window_samples_df = target_samples_df[
+                    target_samples_df["Window"] == window
                 ]
 
-                for window in replica_samples_df["Window"].unique():
+                for replica in window_samples_df["Replica"].unique():
                     window_uncorrelated_sample_indices = (
                         target_uncorrelated_samples_df.loc[
                             (target_uncorrelated_samples_df["Replica"] == replica)
@@ -520,12 +520,12 @@ class NMRFitter:
             total_uncorrelated_sample_index = 0
 
             # Read dihedral angles for uncorrelated sample indices in each window
-            for replica in target_samples_df["Replica"].unique():
-                replica_samples_df = target_samples_df[
-                    target_samples_df["Replica"] == replica
+            for window in target_samples_df["Window"].unique():
+                window_samples_df = target_samples_df[
+                    target_samples_df["Window"] == window
                 ]
 
-                for window in replica_samples_df["Window"].unique():
+                for replica in window_samples_df["Replica"].unique():
                     window_uncorrelated_sample_indices = (
                         target_uncorrelated_samples_df.loc[
                             (target_uncorrelated_samples_df["Replica"] == replica)
