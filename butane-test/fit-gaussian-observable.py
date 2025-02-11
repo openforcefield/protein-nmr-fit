@@ -922,7 +922,10 @@ def main(
 
     # Get initial force field
     force_fields = {
-        "null-0.0.3-pair-opc3": Path("Protein-Null-0.0.3-Pairwise-NAGL.offxml"),
+        "null-0.0.3-pair-opc3": Path(
+            "gaussian-force-fields",
+            "Protein-Null-0.0.3-Pairwise-NAGL.offxml",
+        ),
     }
     force_field = ForceField(force_fields[force_field_name])
 

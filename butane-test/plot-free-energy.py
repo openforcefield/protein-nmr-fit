@@ -148,13 +148,13 @@ def _plot_free_energy(
     )
 
     if x_ticks is None:
-        x_ticks = numpy.arange(min_x, max_x + 7.5, 60)
+        x_ticks = numpy.arange(min_x, max_x + 30, 60)
 
     if x_range is None:
         x_range = (min_x, max_x)
 
     if y_ticks is None:
-        y_ticks = numpy.arange(0.0, max_y + 0.5, 1.0)
+        y_ticks = numpy.arange(0.0, max_y + 1.0, 2.0)
 
     if y_range is None:
         y_range = (0, max_y)
@@ -205,7 +205,14 @@ def _plot_free_energy(
             )
 
             ax.set_xticks(x_ticks)
-            pyplot.setp(ax.get_xticklabels()[1::2], visible=False)
+            pyplot.setp(
+                [
+                    ax.get_xticklabels()[i]
+                    for i in range(len(ax.get_xticklabels()))
+                    if i % 3 != 0
+                ],
+                visible=False,
+            )
             ax.set_xlim(x_range[0], x_range[1])
             ax.set_yticks(y_ticks)
             pyplot.setp(ax.get_yticklabels()[1::2], visible=False)
@@ -333,11 +340,17 @@ def main(
         if output_prefix == "butane-opc3":
             ff_labels = {
                 "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-1E-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e-2-opc3",
-                "Null-NMR-1E-2-OPC3-Pred": [
-                    "null-0.0.3-pair-opc3",
-                    "null-0.0.3-pair-nmr-1e-2-opc3",
-                ],
+                "Null-NMR-1E-3-OPC3-Obs": "null-0.0.3-pair-nmr-1e-3-opc3",
+                #"Null-NMR-1E-3-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e-3-cum-2-opc3",
+                "Null-NMR-1E-3-Cu-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e-3-cum-2-opc3",
+                #"Null-NMR-1E-3-OPC3-Pred": [
+                #    "null-0.0.3-pair-opc3",
+                #    "null-0.0.3-pair-nmr-1e-3-opc3",
+                #],
+                #"Null-NMR-1E-3-Cu-2-OPC3-Pred": [
+                #    "null-0.0.3-pair-nmr-1e-3-opc3",
+                #    "null-0.0.3-pair-nmr-1e-3-cum-2-opc3",
+                #],
             }
 
             target_labels = {
@@ -348,20 +361,24 @@ def main(
 
         for target_label, target in target_labels.items():
             for ff_label, force_field in ff_labels.items():
+                mbar_str = "mbar"
+
                 if ff_label.endswith("Pred"):
+                    if "Cu" in ff_label:
+                        mbar_str = f"{mbar_str}-cum"
                     mbar_free_energy_path = Path(
                         input_dir,
                         f"{target}-{force_field[0]}",
                         "analysis",
-                        f"{target}-{force_field[0]}-mbar-{force_field[1]}-"
-                            "free-energy.dat",
+                        f"{target}-{force_field[0]}-{mbar_str}-"
+                            f"{force_field[1]}-free-energy.dat",
                     )
                 else:
                     mbar_free_energy_path = Path(
                         input_dir,
                         f"{target}-{force_field}",
                         "analysis",
-                        f"{target}-{force_field}-mbar-free-energy.dat",
+                        f"{target}-{force_field}-{mbar_str}-free-energy.dat",
                     )
 
                 mbar_df = pandas.read_csv(
@@ -385,7 +402,7 @@ def main(
                             input_dir,
                             f"{target}-{force_field[0]}",
                             "analysis",
-                            f"{target}-{force_field[0]}-mbar-{replica}-"
+                            f"{target}-{force_field[0]}-{mbar_str}-{replica}-"
                                 f"{force_field[1]}-free-energy.dat",
                         )
                     else:
@@ -393,7 +410,7 @@ def main(
                             input_dir,
                             f"{target}-{force_field}",
                             "analysis",
-                            f"{target}-{force_field}-mbar-{replica}-free-"
+                            f"{target}-{force_field}-{mbar_str}-{replica}-free-"
                                 "energy.dat",
                         )
 
@@ -424,21 +441,21 @@ def main(
                 free_energy_df["Replica"] != "Pooled"
             ]["Force Field"].unique()
 
-            #_plot_free_energy(
-            #    plot_data_df=free_energy_df,
-            #    row_labels=plot_ff_labels,
-            #    column_labels=replicas,
-            #    output_path=Path(
-            #        output_dir,
-            #        f"{output_prefix}-free-energy.{extension}",
-            #    ),
-            #    x_df_column="C-C-C-C dihedral (deg)",
-            #    y_df_column="Free Energy (kcal mol^-1)",
-            #    y_uncertainty_df_column="Free Energy Uncertainty (kcal mol^-1)",
-            #    figure_size=figure_size,
-            #    column_df_column="Replica",
-            #    x_label="C-C-C-C dihedral (deg)",
-            #)
+            _plot_free_energy(
+                plot_data_df=free_energy_df,
+                row_labels=plot_ff_labels,
+                column_labels=replicas,
+                output_path=Path(
+                    output_dir,
+                    f"{output_prefix}-free-energy.{extension}",
+                ),
+                x_df_column="C-C-C-C dihedral (deg)",
+                y_df_column="Free Energy (kcal mol^-1)",
+                y_uncertainty_df_column="Free Energy Uncertainty (kcal mol^-1)",
+                figure_size=figure_size,
+                column_df_column="Replica",
+                x_label="C-C-C-C dihedral (deg)",
+            )
 
             plot_ff_labels = free_energy_df[
                 free_energy_df["Replica"] == "Pooled"

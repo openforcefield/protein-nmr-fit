@@ -6,12 +6,18 @@ import numpy
 import openmm
 import pandas
 from loos.pyloos import Trajectory
-from openmm import unit
-from proteinbenchmark.benchmark_targets import benchmark_targets
+from openff.toolkit import (
+    ForceField,
+    Molecule,
+    Topology,
+    ToolkitRegistry,
+    RDKitToolkitWrapper,
+)
+from openff.toolkit.utils import toolkit_registry_manager
+from openff.toolkit.utils.nagl_wrapper import NAGLToolkitWrapper
+from openmm import app, unit
 from proteinbenchmark.force_fields import force_fields
-from proteinbenchmark.simulation_parameters import NONBONDED_CUTOFF, VDW_SWITCH_WIDTH
-from proteinbenchmark.system_setup import assign_parameters
-from proteinbenchmark.utilities import read_xml
+from proteinbenchmark.utilities import read_xml, write_xml
 
 
 class ReweightReference:
@@ -88,8 +94,8 @@ class ReweightReference:
 
         target_betas = list()
         for target in self.target_list:
-            target_temperature = benchmark_targets[target]["temperature"]
-            RT = unit.MOLAR_GAS_CONSTANT_R * target_temperature.to_openmm()
+            target_temperature = 298.0 * unit.kelvin
+            RT = unit.MOLAR_GAS_CONSTANT_R * target_temperature
             target_betas.append(1.0 / RT)
 
         self.target_betas = target_betas
@@ -119,8 +125,6 @@ class ReweightReference:
         df_columns = [
             "Frame",
             "Observable",
-            "Resid",
-            "Resname",
             experiment_column,
             "Experiment Uncertainty",
             "Computed",
@@ -158,7 +162,7 @@ class ReweightReference:
             mbar_df = pandas.read_csv(
                 mbar_samples_path,
                 index_col=0,
-                usecols=lambda column: column != "Fraction Native Contacts",
+                usecols=lambda column: column != "Dihedral CV",
             )
 
             # Read uncorrelated sample indices and MBAR weight denominators
@@ -169,7 +173,7 @@ class ReweightReference:
             mbar_uncorrelated_df = pandas.read_csv(
                 mbar_uncorrelated_samples_path,
                 index_col=0,
-                usecols=lambda column: column != "Fraction Native Contacts",
+                usecols=lambda column: column != "Dihedral CV",
             )
 
             # Read observables for uncorrelated sample indices in each window
@@ -188,7 +192,7 @@ class ReweightReference:
                     observable_path = Path(
                         target_directory,
                         f"{target}-{self.force_field_name}-{replica}-"
-                        f"{window:02d}-scalar-couplings-time-series.dat",
+                        f"{window:02d}-gaussian-observable-time-series.dat",
                     )
                     observable_df = pandas.read_csv(
                         observable_path,
@@ -215,8 +219,6 @@ class ReweightReference:
             # of observables for each sample
             index_columns = [
                 "Observable",
-                "Resid",
-                "Resname",
                 "Truncated Experiment",
                 "Experiment Uncertainty",
             ]
@@ -238,9 +240,9 @@ class ReweightReference:
             )
 
             for observable_index, observable_group in enumerate(observable_groups):
-                target_experimental_observables[observable_index] = observable_group[3]
+                target_experimental_observables[observable_index] = observable_group[1]
                 target_experimental_uncertainties[observable_index] = observable_group[
-                    4
+                    2
                 ]
                 target_sampled_observables[observable_index] = target_observable_df.loc[
                     observable_group, "Computed"
@@ -448,6 +450,9 @@ class ReweightReference:
                     # Loop over uncorrelated sample indices  and compute the
                     # reweighting potential
                     for frame in trajectory:
+                        #if trajectory.index() % 10 != 9:
+                        #    continue
+
                         # Set periodic box vectors in OpenMM context from trajectory
                         d = frame.periodicBox()[0] * loos_to_openmm
                         box_vectors = numpy.array(
@@ -625,7 +630,7 @@ class ReweightReference:
 @click.option(
     "-o",
     "--output-directory",
-    default="reweight-scalar-couplings",
+    default="reweight-gaussian-observable",
     show_default=True,
     type=click.STRING,
     help="Directory path to write query OpenMM systems.",
@@ -654,10 +659,10 @@ def main(
 
     query_force_fields = query_force_fields.strip("'\"").split(",")
 
-    target_list = ["gb3"]
+    target_list = ["butane"]
     N_targets = len(target_list)
 
-    observable_list = ["3j_hn_cb", "3j_hn_co", "3j_hn_ha"]
+    observable_list = ["3j_c_c"]
 
     # Set up reference simulation for reweighting
     reweight_reference = ReweightReference(
@@ -696,27 +701,66 @@ def main(
                 query_system_paths.append(str(query_system_path))
 
                 target_dir = Path(input_directory, f"{target}-{force_field_name}")
-                protonated_pdb = Path(
-                    target_dir,
-                    "setup",
-                    f"{target}-{force_field_name}-protonated.pdb",
-                )
                 minimized_pdb = Path(
                     target_dir,
                     "setup",
                     f"{target}-{force_field_name}-minimized.pdb",
                 )
-                assign_parameters(
-                    simulation_platform="openmm",
-                    nonbonded_cutoff=NONBONDED_CUTOFF,
-                    vdw_switch_width=VDW_SWITCH_WIDTH,
-                    protonated_pdb_file=str(protonated_pdb),
-                    solvated_pdb_file=str(minimized_pdb),
-                    parametrized_system=str(query_system_path),
-                    water_model=force_fields[query_ff]["water_model"],
-                    force_field_file=force_fields[query_ff]["force_field_file"],
-                    water_model_file=force_fields[query_ff]["water_model_file"],
+                force_field_dict = force_fields["null-0.0.3-pair-opc3"]
+                if query_ff == "null-0.0.3-pair-opc3":
+                    force_field_file = force_field_dict["force_field_file"]
+                else:
+                    force_field_file = str(
+                        Path("gaussian-force-fields", f"{query_ff}.offxml")
+                    )
+                water_model = force_field_dict["water_model"]
+                water_model_file = force_field_dict["water_model_file"]
+
+                # Assign parameters to the solvated system
+                openmm_topology = app.PDBFile(str(minimized_pdb)).topology
+                openff_topology = Topology.from_openmm(
+                    openmm_topology,
+                    unique_molecules=[
+                        Molecule.from_smiles("CCCC"),
+                        Molecule.from_smiles("O"),
+                    ],
                 )
+                openff_force_field = ForceField(
+                    force_field_file,
+                    water_model_file,
+                )
+
+                with toolkit_registry_manager(
+                    ToolkitRegistry([RDKitToolkitWrapper, NAGLToolkitWrapper])
+                ):
+                    openmm_system = openff_force_field.create_openmm_system(
+                        openff_topology
+                    )
+
+                # Repartition hydrogen mass to bonded heavy atom
+                hydrogen_mass = 3.0 * unit.dalton
+                _hydrogen = app.element.hydrogen
+                for atom1, atom2 in openmm_topology.bonds():
+                    if atom1.element == _hydrogen:
+                        (atom1, atom2) = (atom2, atom1)
+                    if (
+                        atom2.element == _hydrogen
+                        and atom1.element not in {_hydrogen, None}
+                        and atom2.residue.name != "HOH"
+                    ):
+                        transfer_mass = (
+                            hydrogen_mass
+                            - openmm_system.getParticleMass(atom2.index)
+                        )
+                        heavy_mass = (
+                            openmm_system.getParticleMass(atom1.index)
+                            - transfer_mass
+                        )
+                        openmm_system.setParticleMass(atom2.index, hydrogen_mass)
+                        openmm_system.setParticleMass(atom1.index, heavy_mass)
+
+                # Write OpenMM system to XML file
+                write_xml(str(query_system_path), openmm_system)
 
         query_result = reweight_reference(query_system_paths)
 

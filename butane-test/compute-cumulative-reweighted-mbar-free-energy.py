@@ -126,6 +126,15 @@ def run_mbar(
     help="Number of bootstrap samples to generate for uncertainty estimates.",
 )
 @click.option(
+    "-c",
+    "--cumulative-directory",
+    type=click.STRING,
+    default="reweight-gaussian-observable",
+    show_default=True,
+    help="Directory containing reweighting potentials for cumulative force "
+        "fields.",
+)
+@click.option(
     "-e",
     "--end-length",
     type=click.INT,
@@ -136,11 +145,12 @@ def run_mbar(
 )
 @click.option(
     "-f",
-    "--force-field",
+    "--force-fields",
     type=click.STRING,
-    default="null-0.0.3-pair-opc3",
+    default="null-0.0.3-pair-nmr-1e-3-opc3,null-0.0.3-pair-opc3",
     show_default=True,
-    help="Name of force field used to sample the trajectory.",
+    help="Comma-separated list of force field names used to sample "
+        "trajectories.",
 )
 @click.option(
     "-l",
@@ -200,8 +210,9 @@ def run_mbar(
 )
 def main(
     bootstrap_samples,
+    cumulative_directory,
     end_length,
-    force_field,
+    force_fields,
     length,
     nmr_fit_directory,
     output_directory,
@@ -210,76 +221,137 @@ def main(
     target,
     bin_width,
 ):
-    umbrella_directory = Path(
-        output_directory,
-        f"{target}-{force_field}",
-    )
-    analysis_directory = Path(umbrella_directory, "analysis")
+    mbar_str = "mbar"
+    if replica_to_analyze is not None:
+        mbar_str = f"{mbar_str}-{replica_to_analyze}"
+
+    force_fields = force_fields.strip("'\"").split(",")
 
     temperature = 298.0 * unit.kelvin
     RT = unit.MOLAR_GAS_CONSTANT_R * temperature
     beta = 1.0 / RT.value_in_unit(unit.kilocalorie_per_mole)
 
-    # Read time series of collective variable and sample indices for correlated
-    # and uncorrelated samples
-    mbar_str = "mbar-cum"
-    if replica_to_analyze is not None:
-        mbar_str = f"{mbar_str}-{replica_to_analyze}"
+    # Read MBAR samples for all force fields
+    N_windows = list()
+    window_centers = list()
+    umbrella_energy_constants = list()
 
-    mbar_samples_path = Path(
-        analysis_directory,
-        f"{target}-{force_field}-{mbar_str}-samples.dat",
-    )
-    mbar_uncorrelated_samples_path = Path(
-        analysis_directory,
-        f"{target}-{force_field}-{mbar_str}-uncorrelated-samples.dat",
-    )
+    N_samples = list()
+    dihedral_cv = list()
+    sample_force_fields = list()
+    sample_replicas = list()
+    sample_windows = list()
 
-    mbar_samples_df = pandas.read_csv(
-        mbar_samples_path,
-        index_col=0,
-    )
-    mbar_uncorrelated_samples_df = pandas.read_csv(
-        mbar_uncorrelated_samples_path,
-        index_col=0,
-    )
+    N_uncorrelated_samples = list()
+    uncorrelated_dihedral_cv = list()
+    uncorrelated_sample_force_fields = list()
+    uncorrelated_sample_replicas = list()
+    uncorrelated_sample_windows = list()
+    uncorrelated_sample_indices = list()
 
-    dihedral_cv = mbar_samples_df["Dihedral CV"].values
-    uncorrelated_dihedral_cv = mbar_uncorrelated_samples_df["Dihedral CV"].values
+    bootstrap_sample_indices = list()
 
-    # Read umbrella energy constants, window centers, and number of correlated
-    # and uncorrelated samples per window
-    windows = mbar_samples_df["Window"].unique()
-    N_windows = len(windows)
+    for force_field in force_fields:
+        umbrella_directory = Path(output_directory, f"{target}-{force_field}")
+        analysis_directory = Path(umbrella_directory, "analysis")
 
-    window_centers = numpy.zeros(N_windows)
-    umbrella_energy_constants = numpy.zeros(N_windows)
-    N_samples = numpy.zeros(N_windows, dtype=int)
-    N_uncorrelated_samples = numpy.zeros(N_windows, dtype=int)
-
-    for window_index, window in enumerate(windows):
-        window_out_files = Path(umbrella_directory, "replica-1").glob(
-            f"{target}-{force_field}-1-{window:02d}-*.out"
+        # Read time series of collective variable for correlated and
+        # uncorrelated samples
+        mbar_samples_path = Path(
+            analysis_directory,
+            f"{target}-{force_field}-{mbar_str}-samples.dat",
         )
-        with open(next(window_out_files), "r") as out_file:
-            for line in out_file:
-                fields = line.split()
-                if fields[0] == "umbrella_energy_constant":
-                    umbrella_energy_constant = float(fields[1]) * beta
-                elif fields[0] == "window_center":
-                    window_center = float(fields[1])
-
-        umbrella_energy_constants[window_index] = umbrella_energy_constant
-        window_centers[window_index] = window_center
-
-        N_samples[window_index] = len(
-            mbar_samples_df[mbar_samples_df["Window"] == window]
+        mbar_uncorrelated_samples_path = Path(
+            analysis_directory,
+            f"{target}-{force_field}-{mbar_str}-uncorrelated-samples.dat",
         )
-        N_uncorrelated_samples[window_index] = len(
-            mbar_uncorrelated_samples_df[
-                mbar_uncorrelated_samples_df["Window"] == window
-            ]
+
+        mbar_samples_df = pandas.read_csv(
+            mbar_samples_path,
+            index_col=0,
         )
+        mbar_uncorrelated_samples_df = pandas.read_csv(
+            mbar_uncorrelated_samples_path,
+            index_col=0,
+        )
+
+        dihedral_cv.extend(
+            mbar_samples_df["Dihedral CV"].values
+        )
+        sample_force_fields.extend([force_field] * mbar_samples_df.shape[0])
+        sample_replicas.extend(mbar_samples_df["Replica"].values)
+        sample_windows.extend(mbar_samples_df["Window"].values)
+
+        uncorrelated_dihedral_cv.extend(
+            mbar_uncorrelated_samples_df["Dihedral CV"].values
+        )
+        uncorrelated_sample_force_fields.extend(
+            [force_field] * mbar_uncorrelated_samples_df.shape[0]
+        )
+        uncorrelated_sample_replicas.extend(
+            mbar_uncorrelated_samples_df["Replica"].values
+        )
+        uncorrelated_sample_windows.extend(
+            mbar_uncorrelated_samples_df["Window"].values
+        )
+
+        # Read sample indices for uncorrelated samples
+        uncorrelated_sample_indices.extend(
+            mbar_uncorrelated_samples_df["Indices"].values
+        )
+
+        # Read bootstrap sample indices from resampling the uncorrelated sample
+        # indices with replacement
+        bootstrap_sample_indices.extend(
+            mbar_uncorrelated_samples_df.loc[
+                :,
+                mbar_uncorrelated_samples_df.columns.str.startswith(
+                    "Bootstrap Sample Indices"
+                ),
+            ].values + sum(N_uncorrelated_samples)
+        )
+
+        # Read umbrella energy constants, window centers, and number of correlated
+        # and uncorrelated samples per window
+        windows = mbar_samples_df["Window"].unique()
+        N_windows.append(len(windows))
+
+        for window_index, window in enumerate(windows):
+            window_out_files = Path(umbrella_directory, "replica-1").glob(
+                f"{target}-{force_field}-1-{window:02d}-*.out"
+            )
+            with open(next(window_out_files), "r") as out_file:
+                for line in out_file:
+                    fields = line.split()
+                    if fields[0] == "umbrella_energy_constant":
+                        umbrella_energy_constant = float(fields[1]) * beta
+                    elif fields[0] == "window_center":
+                        window_center = float(fields[1])
+
+            umbrella_energy_constants.append(umbrella_energy_constant)
+            window_centers.append(window_center)
+
+            N_samples.append(
+                len(mbar_samples_df[mbar_samples_df["Window"] == window])
+            )
+            N_uncorrelated_samples.append(
+                len(
+                    mbar_uncorrelated_samples_df[
+                        mbar_uncorrelated_samples_df["Window"] == window
+                    ]
+                )
+            )
+
+    umbrella_energy_constants = numpy.array(umbrella_energy_constants)
+    window_centers = numpy.array(window_centers)
+    N_samples = numpy.array(N_samples, dtype=int)
+    dihedral_cv = numpy.array(dihedral_cv)
+    N_uncorrelated_samples = numpy.array(N_uncorrelated_samples, dtype=int)
+    uncorrelated_dihedral_cv = numpy.array(uncorrelated_dihedral_cv)
+    bootstrap_sample_indices = numpy.array(bootstrap_sample_indices).T
+
+    N_total_samples = N_samples.sum()
+    N_total_uncorrelated_samples = N_uncorrelated_samples.sum()
 
     # Evaluate the bias potentials for samples from all windows
     delta_phi = numpy.abs(dihedral_cv - window_centers[:, numpy.newaxis])
@@ -299,6 +371,89 @@ def main(
             )
         )
     )
+
+    # Add potential differences between force fields
+    column_window_index = 0
+    sample_index = 0
+    uncorrelated_sample_index = 0
+
+    for column_index in range(len(force_fields)):
+        column_N_windows = N_windows[column_index]
+        column_N_samples = N_samples[
+            column_window_index : column_window_index + column_N_windows
+        ].sum()
+        column_N_uncorrelated_samples = N_uncorrelated_samples[
+            column_window_index : column_window_index + column_N_windows
+        ].sum()
+
+        row_window_index = N_windows[0]
+
+        if column_index > 0:
+            reweighting_potential_path = Path(
+                cumulative_directory,
+                f"{target}-{force_fields[column_index]}-"
+                    f"{force_fields[0]}-reweighting-potential.dat",
+            )
+            reweighting_potential = numpy.loadtxt(reweighting_potential_path)
+
+            reduced_bias_potentials[
+                row_window_index :,
+                sample_index : sample_index + column_N_samples
+            ] -= reweighting_potential
+
+            uncorrelated_reweighting_potential_path = Path(
+                cumulative_directory,
+                f"{target}-{force_fields[column_index]}-"
+                    f"{force_fields[0]}-uncorrelated-reweighting-"
+                    "potential.dat",
+            )
+            uncorrelated_reweighting_potential = numpy.loadtxt(
+                uncorrelated_reweighting_potential_path
+            )
+
+            uncorrelated_reduced_bias_potentials[
+                row_window_index : ,
+                uncorrelated_sample_index
+                    : uncorrelated_sample_index + column_N_uncorrelated_samples
+            ] -= uncorrelated_reweighting_potential
+
+        for row_index in range(1, len(force_fields)):
+            row_N_windows = N_windows[row_index]
+
+            if row_index != column_index:
+                reweighting_potential_path = Path(
+                    cumulative_directory,
+                    f"{target}-{force_fields[column_index]}-"
+                        f"{force_fields[row_index]}-reweighting-potential.dat",
+                )
+                reweighting_potential = numpy.loadtxt(reweighting_potential_path)
+
+                reduced_bias_potentials[
+                    row_window_index : row_window_index + row_N_windows,
+                    sample_index : sample_index + column_N_samples
+                ] += reweighting_potential
+
+                uncorrelated_reweighting_potential_path = Path(
+                    cumulative_directory,
+                    f"{target}-{force_fields[column_index]}-"
+                        f"{force_fields[row_index]}-uncorrelated-reweighting-"
+                        "potential.dat",
+                )
+                uncorrelated_reweighting_potential = numpy.loadtxt(
+                    uncorrelated_reweighting_potential_path
+                )
+
+                uncorrelated_reduced_bias_potentials[
+                    row_window_index : row_window_index + row_N_windows,
+                    uncorrelated_sample_index
+                        : uncorrelated_sample_index + column_N_uncorrelated_samples
+                ] += uncorrelated_reweighting_potential
+
+            row_window_index += row_N_windows
+
+        column_window_index += column_N_windows
+        sample_index += column_N_samples
+        uncorrelated_sample_index += column_N_uncorrelated_samples
 
     # Read reweighting potential for query force field
     reweighting_potential = numpy.loadtxt(Path(
@@ -327,17 +482,8 @@ def main(
         bin_width,
     )
 
-    # Read bootstrap sample indices from resampling the uncorrelated sample
-    # indices with replacemet
-    bootstrap_sample_indices = mbar_uncorrelated_samples_df.loc[
-        :,
-        mbar_uncorrelated_samples_df.columns.str.startswith(
-            "Bootstrap Sample Indices"
-        ),
-    ].values.T
-    bootstrap_samples = bootstrap_sample_indices.shape[0]
-
     # Run MBAR for each bootstrap sample
+    bootstrap_samples = bootstrap_sample_indices.shape[0]
     bootstrap_unbiased_free_energy_surface = numpy.zeros(
         (bootstrap_samples, len(bin_centers))
     )
@@ -364,7 +510,9 @@ def main(
     )
 
     # Write MBAR output using pandas
-    out_prefix = str(Path(analysis_directory, f"{target}-{force_field}-{mbar_str}"))
+    umbrella_directory = Path(output_directory, f"{target}-{force_fields[0]}")
+    analysis_directory = Path(umbrella_directory, "analysis")
+    out_prefix = Path(analysis_directory, f"{target}-{force_fields[0]}-{mbar_str}-cum")
     if length != None:
         time = int(numpy.round(length / 10))
         out_prefix = f"{out_prefix}-{time}ns"

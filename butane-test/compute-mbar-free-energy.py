@@ -292,9 +292,7 @@ def main(
         N_samples[window_index] = N_window_samples
 
     dihedral_cv = numpy.array(dihedral_cv)
-    uncorrelated_dihedral_cv = numpy.array(
-        uncorrelated_dihedral_cv
-    )
+    uncorrelated_dihedral_cv = numpy.array(uncorrelated_dihedral_cv)
 
     N_total_samples = N_samples.sum()
     N_total_uncorrelated_samples = N_uncorrelated_samples.sum()
@@ -341,7 +339,7 @@ def main(
     )
     overlap_matrix = N_samples * (mbar_weights.T @ mbar_weights)
 
-    print("Window Overlap")
+    print("\nWindow Overlap")
     for window_index in range(N_windows - 1):
         print(
             f"    {window_index:2d} "
@@ -349,7 +347,7 @@ def main(
         )
 
     # Get bootstrap sample indices by resampling the uncorrelated sample indices
-    # with replacemet
+    # with replacement
     rng = numpy.random.default_rng()
 
     if bootstrap_samples > 0:

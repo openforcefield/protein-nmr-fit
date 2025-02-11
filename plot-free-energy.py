@@ -210,23 +210,21 @@ def _plot_free_energy(
             ax.set_ylim(y_range[0], y_range[1])
 
             if "ff14SB" in row_label:
-                ax.set_ylabel(row_label.replace("-", "\n", 1))
+                row_y_label = row_label.replace("-", "\n", 1)
             elif "TIP3P-FB" in row_label:
                 a = row_label.split("-")
-                ax.set_ylabel(
-                    "-".join(a[:1]) + "\n" + "-".join(a[1:-2]) + "\n" + "-".join(a[-2:])
-                )
+                row_y_label = "-".join(a[:1]) + "\n" + "-".join(a[1:-2]) + "\n" + "-".join(a[-2:])
             elif "NMR-0.8" in row_label or "NMR-0.7" in row_label:
                 a = row_label.split("-")
-                ax.set_ylabel(
+                row_y_label = (
                     "-".join(a[:1]) + "\n" + "-".join(a[1:3]) + "\n"
                     + "-".join(a[3:-1]) + "\n" + "-".join(a[-1:])
                 )
             else:
                 a = row_label.split("-")
-                ax.set_ylabel(
-                    "-".join(a[:1]) + "\n" + "-".join(a[1:-1]) + "\n" + "-".join(a[-1:])
-                )
+                row_y_label = "-".join(a[:1]) + "\n" + "-".join(a[1:-1]) + "\n" + "-".join(a[-1:])
+
+            ax.set_ylabel(row_y_label.replace("NMR-", ""))
 
     for ax in axes.flat:
         ax.label_outer()
@@ -331,11 +329,10 @@ def main(
 
     for output_prefix in [
         #"gb3-opc3",
-        #"gb3-nmr-opc3",
+        "gb3-nmr-opc3",
         #"gb3-nmr-pred-opc3",
-        #"gb3-nmr-0.8-opc3",
-        #"gb3-nmr-0.8-pred-opc3",
-        "gb3-nmr-0.8-cum-opc3",
+        #"gb3-nmr-cum-opc3",
+        #"gb3-nmr-cum-pred-opc3",
     ]:
         if output_prefix == "gb3-opc3":
             ff_labels = {
@@ -354,17 +351,10 @@ def main(
             ff_labels = {
                 "ff14SB-OPC3": "ff14sb-opc3",
                 "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-0.8-1E4-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-opc3",
-                "Null-NMR-0.8-1E4-2-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
-                "Null-NMR-0.8-1E4-3-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                "Null-NMR-0.8-1E4-4-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-4-opc3",
-                #"Null-NMR-1E5-OPC3": "null-0.0.3-pair-nmr-1e5-opc3",
-                #"Null-NMR-1E5-2-OPC3": "null-0.0.3-pair-nmr-1e5-2-opc3",
-                #"Null-NMR-1E5-3-OPC3": "null-0.0.3-pair-nmr-1e5-3-opc3",
-                #"Null-NMR-1E4-OPC3": "null-0.0.3-pair-nmr-1e4-opc3",
-                #"Null-NMR-1E3-OPC3": "null-0.0.3-pair-nmr-1e3-opc3",
-                #"Null-NMR-1E2-OPC3": "null-0.0.3-pair-nmr-1e2-opc3",
-                #"Null-Gen-1E5-OPC3": "null-0.0.3-pair-general-nmr-1e5-opc3",
+                "Null-NMR-1E4-OPC3": "null-0.0.3-pair-nmr-1e4-opc3",
+                "Null-NMR-1E4-2-OPC3": "null-0.0.3-pair-nmr-1e4-2-opc3",
+                "Null-NMR-1E4-3-OPC3": "null-0.0.3-pair-nmr-1e4-3-opc3",
+                "Null-NMR-1E4-4-OPC3": "null-0.0.3-pair-nmr-1e4-4-opc3",
             }
 
             target_labels = {
@@ -375,75 +365,54 @@ def main(
             ff_labels = {
                 "ff14SB-OPC3": "ff14sb-opc3",
                 "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-1E5-OPC3-Obs": "null-0.0.3-pair-nmr-1e5-opc3",
-                "Null-NMR-1E5-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e5-2-opc3",
-                "Null-NMR-1E5-OPC3-Pred": [
+                "Null-NMR-1E4-OPC3-Obs": "null-0.0.3-pair-nmr-1e4-opc3",
+                "Null-NMR-1E4-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e4-2-opc3",
+                "Null-NMR-1E4-3-OPC3": "null-0.0.3-pair-nmr-1e4-3-opc3",
+                "Null-NMR-1E4-OPC3-Pred": [
                     "null-0.0.3-pair-opc3",
-                    "null-0.0.3-pair-nmr-1e5-opc3",
+                    "null-0.0.3-pair-nmr-1e4-opc3",
                 ],
-                "Null-NMR-1E5-2-OPC3-Pred": [
-                    "null-0.0.3-pair-nmr-1e5-opc3",
-                    "null-0.0.3-pair-nmr-1e5-2-opc3",
+                "Null-NMR-1E4-2-OPC3-Pred": [
+                    "null-0.0.3-pair-nmr-1e4-opc3",
+                    "null-0.0.3-pair-nmr-1e4-2-opc3",
                 ],
-                #"Null-NMR-1E5-3-OPC3": "null-0.0.3-pair-nmr-1e5-3-opc3",
+                "Null-NMR-1E4-3-OPC3-Pred": [
+                    "null-0.0.3-pair-nmr-1e4-2-opc3",
+                    "null-0.0.3-pair-nmr-1e4-3-opc3",
+                ],
             }
 
             target_labels = {
                 "GB3": "gb3",
             }
 
-        elif output_prefix == "gb3-nmr-0.8-opc3":
+        elif output_prefix == "gb3-nmr-cum-opc3":
             ff_labels = {
                 "ff14SB-OPC3": "ff14sb-opc3",
                 "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-0.8-1E4-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-opc3",
-                "Null-NMR-0.8-1E4-2-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
-                "Null-NMR-0.8-1E4-3-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                "Null-NMR-0.8-1E4-4-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-4-opc3",
+                "Null-NMR-1E4-OPC3": "null-0.0.3-pair-nmr-1e4-opc3",
+                #"Null-NMR-1E4-Cu-OPC3": "null-0.0.3-pair-nmr-1e4-opc3",
+                "Null-NMR-1E4-Cu-2-OPC3": "null-0.0.3-pair-nmr-1e4-cum-2-opc3",
             }
 
             target_labels = {
                 "GB3": "gb3",
             }
 
-        elif output_prefix == "gb3-nmr-0.8-pred-opc3":
+        elif output_prefix == "gb3-nmr-cum-pred-opc3":
             ff_labels = {
                 "ff14SB-OPC3": "ff14sb-opc3",
                 "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-0.8-1E4-OPC3-Obs": "null-0.0.3-pair-nmr-0.8-1e4-opc3",
-                "Null-NMR-0.8-1E4-2-OPC3-Obs": "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
-                "Null-NMR-0.8-1E4-3-OPC3-Obs": "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                "Null-NMR-0.8-1E4-4-OPC3-Obs": "null-0.0.3-pair-nmr-0.8-1e4-4-opc3",
-                "Null-NMR-0.8-1E4-OPC3-Pred": [
+                "Null-NMR-1E4-OPC3-Obs": "null-0.0.3-pair-nmr-1e4-opc3",
+                "Null-NMR-1E4-Cu-2-OPC3-Obs": "null-0.0.3-pair-nmr-1e4-cum-2-opc3",
+                "Null-NMR-1E4-OPC3-Pred": [
                     "null-0.0.3-pair-opc3",
-                    "null-0.0.3-pair-nmr-0.8-1e4-opc3",
+                    "null-0.0.3-pair-nmr-1e4-opc3",
                 ],
-                "Null-NMR-0.8-1E4-2-OPC3-Pred": [
-                    "null-0.0.3-pair-nmr-0.8-1e4-opc3",
-                    "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
+                "Null-NMR-1E4-Cu-2-OPC3-Pred": [
+                    "null-0.0.3-pair-nmr-1e4-opc3",
+                    "null-0.0.3-pair-nmr-1e4-cum-2-opc3",
                 ],
-                "Null-NMR-0.8-1E4-3-OPC3-Pred": [
-                    "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
-                    "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                ],
-                "Null-NMR-0.8-1E4-4-OPC3-Pred": [
-                    "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                    "null-0.0.3-pair-nmr-0.8-1e4-4-opc3",
-                ],
-            }
-
-            target_labels = {
-                "GB3": "gb3",
-            }
-
-        elif output_prefix == "gb3-nmr-0.8-cum-opc3":
-            ff_labels = {
-                "ff14SB-OPC3": "ff14sb-opc3",
-                "Null-QM-OPC3": "null-0.0.3-pair-opc3",
-                "Null-NMR-0.8-1E4-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-opc3",
-                "Null-NMR-0.8-1E4-2-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-2-opc3",
-                "Null-NMR-0.8-1E4-3-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
-                "Null-NMR-0.8-1E4-3-Cu-OPC3": "null-0.0.3-pair-nmr-0.8-1e4-3-opc3",
             }
 
             target_labels = {
@@ -482,6 +451,9 @@ def main(
                 else:
                     mbar_str = "mbar"
 
+                if "Cu" in ff_label:
+                    mbar_str = f"{mbar_str}-cum"
+
                 if ff_label.endswith("Pred"):
                     mbar_free_energy_path = Path(
                         input_dir,
@@ -489,13 +461,6 @@ def main(
                         "analysis",
                         f"{target}-{force_field[0]}-{mbar_str}-{force_field[1]}-"
                             "free-energy.dat",
-                    )
-                elif "Cu" in ff_label:
-                    mbar_free_energy_path = Path(
-                        input_dir,
-                        f"{target}-{force_field}",
-                        "analysis",
-                        f"{target}-{force_field}-{mbar_str}-cum-free-energy.dat",
                     )
                 else:
                     mbar_free_energy_path = Path(

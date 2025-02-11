@@ -171,7 +171,7 @@ def run_mbar(
     "-q",
     "--query-force-field",
     type=click.STRING,
-    default="null-0.0.3-pair-nmr-1e5-opc3",
+    default="null-0.0.3-pair-nmr-1e4-opc3",
     show_default=True,
     help="Name of force field used to compute the free energy surface.",
 )
@@ -219,9 +219,9 @@ def main(
     beta = 1.0 / RT.value_in_unit(unit.kilocalorie_per_mole)
 
     if replica_to_analyze is None:
-        mbar_str = "mbar-0.8-cum"
+        mbar_str = "mbar"
     else:
-        mbar_str = f"mbar-0.8-{replica_to_analyze}"
+        mbar_str = f"mbar-{replica_to_analyze}"
 
     # Read time series of collective variable and sample indices for correlated
     # and uncorrelated samples

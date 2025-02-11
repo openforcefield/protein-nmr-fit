@@ -6,6 +6,7 @@ from openff.units import unit
 from proteinbenchmark import (
     ProteinBenchmarkSystem,
     align_trajectory,
+    assign_dihedral_clusters,
     benchmark_targets,
     compute_scalar_couplings,
     exists_and_not_empty,
@@ -136,6 +137,20 @@ def main(
 
         if fragment_index > 0:
             merge_csvs(dihedrals)
+
+    # Assign dihedral clusters
+    dihedral_clusters = f"{analysis_prefix}-dihedral-clusters.dat"
+
+    if not exists_and_not_empty(dihedral_clusters):
+        print(
+            "Assigning dihedral clusters for system "
+            f"{benchmark_system.system_name} {replica} {window_index}"
+        )
+
+        assign_dihedral_clusters(
+            dihedrals_path=dihedrals,
+            output_path=dihedral_clusters,
+        )
 
     # Scalar couplings
     scalar_couplings = f"{analysis_prefix}-scalar-couplings.dat"

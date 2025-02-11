@@ -8,8 +8,6 @@ import scipy
 from openff.toolkit import ForceField, Topology
 from openff.units import unit
 from openmm import unit as openmm_unit
-from proteinbenchmark.benchmark_targets import benchmark_targets
-from proteinbenchmark.force_fields import force_fields
 
 
 class TorsionDict(TypedDict):
@@ -120,14 +118,14 @@ class NMRFitter:
             target_samples_df = pandas.read_csv(
                 mbar_samples_path,
                 index_col=0,
-                usecols=lambda column: column != "Fraction Native Contacts",
+                usecols=lambda column: column != "Dihedral CV",
             )
 
             # Read uncorrelated sample indices and MBAR weight denominators
             target_uncorrelated_samples_df = pandas.read_csv(
                 mbar_uncorrelated_samples_path,
                 index_col=0,
-                usecols=lambda column: column != "Fraction Native Contacts",
+                usecols=lambda column: column != "Dihedral CV",
             )
 
             mbar_samples.append(target_samples_df)
@@ -201,8 +199,8 @@ class NMRFitter:
 
         target_betas = list()
         for target in target_list:
-            target_temperature = benchmark_targets[target]["temperature"]
-            RT = openmm_unit.MOLAR_GAS_CONSTANT_R * target_temperature.to_openmm()
+            target_temperature = 298.0 * openmm_unit.kelvin
+            RT = openmm_unit.MOLAR_GAS_CONSTANT_R * target_temperature
             target_betas.append(
                 1.0 / RT.value_in_unit(openmm_unit.kilocalorie_per_mole)
             )
@@ -249,8 +247,6 @@ class NMRFitter:
         df_columns = [
             "Frame",
             "Observable",
-            "Resid",
-            "Resname",
             experiment_column,
             "Experiment Uncertainty",
             "Computed",
@@ -316,7 +312,7 @@ class NMRFitter:
                         observable_path = Path(
                             target_ff_directory,
                             f"{target}-{force_field}-{replica}-{window:02d}-"
-                            "scalar-couplings-time-series.dat",
+                            "gaussian-observable-time-series.dat",
                         )
                         observable_df = pandas.read_csv(
                             observable_path,
@@ -343,8 +339,6 @@ class NMRFitter:
             # of observables for each sample
             index_columns = [
                 "Observable",
-                "Resid",
-                "Resname",
                 "Truncated Experiment",
                 "Experiment Uncertainty",
             ]
@@ -368,9 +362,9 @@ class NMRFitter:
 
             for observable_index, observable_group in enumerate(observable_groups):
                 target_observable_types.append(observable_group[0])
-                target_experimental_observables[observable_index] = observable_group[3]
+                target_experimental_observables[observable_index] = observable_group[1]
                 target_experimental_uncertainties[observable_index] = observable_group[
-                    4
+                    2
                 ]
                 target_sampled_observables[observable_index] = target_observable_df.loc[
                     observable_group, "Computed"
@@ -517,36 +511,6 @@ class NMRFitter:
             target_samples_df = mbar_samples[target_index]
             target_uncorrelated_samples_df = mbar_uncorrelated_samples[target_index]
 
-            target_directory = Path(
-                result_directory,
-                f"{target}-{force_field_name}",
-            )
-
-            # Get OpenFF Topology for protonated biopolymer with residue metadata
-            topology_path = Path(
-                target_directory,
-                "setup",
-                f"{target}-{force_field_name}-protonated.pdb",
-            )
-            topology = Topology.from_pdb(str(topology_path))
-
-            # Get list of residue indices that match each fit parameter SMIRKS
-            parameter_resids = {parameter_id: list() for parameter_id in fit_parameters}
-            torsion_matches = force_field["ProperTorsions"].find_matches(
-                topology,
-                unique=True,
-            )
-
-            for atom_indices, match in torsion_matches.items():
-                if match.parameter_type.id not in fit_parameters:
-                    continue
-
-                # Residue indices for atoms in central bond of dihedral angle
-                resid_a = int(topology.atom(atom_indices[1]).metadata["residue_number"])
-                resid_b = int(topology.atom(atom_indices[2]).metadata["residue_number"])
-                dihedral_resid = resid_a if resid_a <= resid_b else resid_b
-                parameter_resids[match.parameter_type.id].append(dihedral_resid)
-
             # Construct a (N_parameters, N_samples) numpy array of basis
             # functions for this target
             N_samples = target_samples_df.shape[0]
@@ -594,8 +558,8 @@ class NMRFitter:
                         )
                         dihedral_df = pandas.read_csv(
                             dihedral_path,
-                            usecols=["Frame", "Resid", "Dihedral Name", "Dihedral (deg)"],
-                            index_col=[1, 2],
+                            usecols=["Frame", "Dihedral Name", "Dihedral (deg)"],
+                            index_col=1,
                         )
                         dihedral_df.sort_index(inplace=True)
 
@@ -616,44 +580,42 @@ class NMRFitter:
                         for parameter_id, fit_parameter in fit_parameters.items():
                             dihedral_name = fit_parameter["dihedral_name"]
 
-                            # Loop over dihedral angles matching this fit parameter
-                            for dihedral_resid in parameter_resids[parameter_id]:
-                                dihedral_time_series = numpy.deg2rad(
-                                    dihedral_df.loc[
-                                        (dihedral_resid, dihedral_name),
-                                        "Dihedral (deg)",
-                                    ].values
+                            dihedral_time_series = numpy.deg2rad(
+                                dihedral_df.loc[
+                                    dihedral_name,
+                                    "Dihedral (deg)",
+                                ].values
+                            )
+                            dihedral_uncorrelated_time_series = numpy.deg2rad(
+                                uncorrelated_dihedral_df.loc[
+                                    dihedral_name,
+                                    "Dihedral (deg)",
+                                ].values
+                            )
+
+                            # Loop over Fourier terms for this fit parameter
+                            fourier_index = parameter_index
+
+                            for periodicity, phase in zip(
+                                fit_parameter["periodicity"],
+                                fit_parameter["phase"],
+                            ):
+                                target_basis_functions[
+                                    fourier_index,
+                                    sample_start_index:total_sample_index,
+                                ] += 1 + numpy.cos(
+                                    periodicity * dihedral_time_series - phase
                                 )
-                                dihedral_uncorrelated_time_series = numpy.deg2rad(
-                                    uncorrelated_dihedral_df.loc[
-                                        (dihedral_resid, dihedral_name),
-                                        "Dihedral (deg)",
-                                    ].values
+
+                                target_uncorrelated_basis_functions[
+                                    fourier_index,
+                                    uncorrelated_sample_start_index:total_uncorrelated_sample_index,
+                                ] += 1 + numpy.cos(
+                                    periodicity * dihedral_uncorrelated_time_series
+                                    - phase
                                 )
 
-                                # Loop over Fourier terms for this fit parameter
-                                fourier_index = parameter_index
-
-                                for periodicity, phase in zip(
-                                    fit_parameter["periodicity"],
-                                    fit_parameter["phase"],
-                                ):
-                                    target_basis_functions[
-                                        fourier_index,
-                                        sample_start_index:total_sample_index,
-                                    ] += 1 + numpy.cos(
-                                        periodicity * dihedral_time_series - phase
-                                    )
-
-                                    target_uncorrelated_basis_functions[
-                                        fourier_index,
-                                        uncorrelated_sample_start_index:total_uncorrelated_sample_index,
-                                    ] += 1 + numpy.cos(
-                                        periodicity * dihedral_uncorrelated_time_series
-                                        - phase
-                                    )
-
-                                    fourier_index += 1
+                                fourier_index += 1
 
                             parameter_index += len(fit_parameter["phase"])
 
@@ -963,42 +925,20 @@ def main(
     # List of parameter ids for parameters to be fit and their associated
     # protein dihedral
     fit_parameter_ids = {
-        "Protein-phi-general": "phi",
-        "Protein-phi-sidechain": "phi'",
-        "Protein-phi-beta-branched": "phi'",
-        "Protein-psi-general": "psi",
-        "Protein-psi-sidechain": "psi'",
-        "Protein-psi-beta-branched": "psi'",
+        "t2": "C-C-C-C",
     }
 
     # List of observable types to train on
-    observable_list = ["3j_hn_cb", "3j_hn_co", "3j_hn_ha"]
+    observable_list = ["3j_c_c"]
 
     # List of training targets
-    target_list = ["gb3"]
+    target_list = ["butane"]
     N_targets = len(target_list)
 
     # Get initial force field
-    if force_field_name in [
-        f"null-0.0.3-pair-{water_model}"
-        for water_model in ["tip3p", "opc3", "tip3p-fb", "opc", "tip4p-fb"]
-    ]:
-        force_field_path = Path(
-            Path(__file__).parent.absolute(),
-            "nmr-force-fields",
-            "null-0.0.3-pair-plus-backbone.offxml",
-            #"null-0.0.3-pair-plus-backbone-general.offxml",
-        )
-        force_field = ForceField(str(force_field_path))
-
-    elif force_field_name not in force_fields:
-        msg = f"Force field {force_field_name} is invalid. Must be one of"
-        for ff in force_fields:
-            msg += f"\n    {ff}"
-        raise ValueError(msg)
-
-    else:
-        force_field = ForceField(force_fields[force_field_name]["force_field_file"])
+    force_field = ForceField(
+        Path("gaussian-force-fields", f"{force_field_name}.offxml")
+    )
 
     # Get periodicities and phases for proper torsions associated with
     # parameters to be fit
@@ -1065,32 +1005,6 @@ def main(
         print(
             "\nObservable Target         N_obs Chi^2     (StDev)   N_eff  (StDev)"
         )
-
-        for observable in observable_list:
-            observables_to_skip = [
-                obs for obs in observable_list if obs != observable
-            ]
-
-            result = nmr_fitter(
-                initial_guess,
-                0.0,
-                observables_to_skip=observables_to_skip,
-            )
-
-            for target_index, target in enumerate(target_list):
-                reduced_chi_square = (
-                    nmr_fitter.chi_square[target_index]
-                    / N_observables_by_type[observable][target_index]
-                )
-
-                print(
-                    f"{observable:10s} {target:14s} "
-                    f"{N_observables_by_type[observable][target_index]:5d} "
-                    f"{reduced_chi_square:9.4f} "
-                    f"({nmr_fitter.chi_square_uncertainty[target_index]:7.4f}) "
-                    f"{int(numpy.round(nmr_fitter.effective_samples[target_index])):6d} "
-                    f"({nmr_fitter.effective_samples_uncertainty[target_index]:5.1f})"
-                )
 
         result = nmr_fitter(initial_guess, 0.0)
         for target_index, target in enumerate(target_list):
@@ -1215,62 +1129,6 @@ def main(
         "\nObservable Target         N_obs Init_Chi^2 (StDev)   Init_N_eff "
         "(StDev) Final_Chi^2 (StDev)   Final_N_eff (StDev)"
     )
-
-    for observable in observable_list:
-        observables_to_skip = [
-            obs for obs in observable_list if obs != observable
-        ]
-
-        result = nmr_fitter(
-            initial_guess,
-            0.0,
-            observables_to_skip=observables_to_skip,
-        )
-        initial_chi_square = numpy.array(nmr_fitter.chi_square)
-        initial_chi_square_uncertainty = numpy.array(
-            nmr_fitter.chi_square_uncertainty
-        )
-        initial_effective_samples = numpy.array(nmr_fitter.effective_samples)
-        initial_effective_samples_uncertainty = numpy.array(
-            nmr_fitter.effective_samples_uncertainty
-        )
-
-        result = nmr_fitter(
-            final_parameters,
-            0.0,
-            observables_to_skip=observables_to_skip,
-        )
-        final_chi_square = numpy.array(nmr_fitter.chi_square)
-        final_chi_square_uncertainty = numpy.array(
-            nmr_fitter.chi_square_uncertainty
-        )
-        final_effective_samples = numpy.array(nmr_fitter.effective_samples)
-        final_effective_samples_uncertainty = numpy.array(
-            nmr_fitter.effective_samples_uncertainty
-        )
-
-        for target_index, target in enumerate(target_list):
-            initial_reduced_chi_square = (
-                initial_chi_square[target_index]
-                / N_observables_by_type[observable][target_index]
-            )
-            final_reduced_chi_square = (
-                final_chi_square[target_index]
-                / N_observables_by_type[observable][target_index]
-            )
-
-            print(
-                f"{observable:10s} {target:14s} "
-                f"{N_observables_by_type[observable][target_index]:5d} "
-                f"{initial_reduced_chi_square:9.4f}  "
-                f"({initial_chi_square_uncertainty[target_index]:7.4f}) "
-                f"{int(numpy.round(initial_effective_samples[target_index])):6d}     "
-                f"({initial_effective_samples_uncertainty[target_index]:5.1f}) "
-                f"{final_reduced_chi_square:9.4f}   "
-                f"({final_chi_square_uncertainty[target_index]:7.4f}) "
-                f"{int(numpy.round(final_effective_samples[target_index])):6d}      "
-                f"({final_effective_samples_uncertainty[target_index]:5.1f}) "
-            )
 
     result = nmr_fitter(initial_guess, 0.0)
     initial_chi_square = numpy.array(nmr_fitter.chi_square)

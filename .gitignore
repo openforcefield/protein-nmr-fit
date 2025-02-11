@@ -3,6 +3,7 @@ butane-test/gaussian-force-fields
 butane-test/nmr-force-fields
 butane-test/plots
 butane-test/results
+butane-test/reweight-gaussian-observable
 fraction-native-contacts/
 nmr-force-fields/
 plots/

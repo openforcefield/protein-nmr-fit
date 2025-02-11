@@ -5,7 +5,6 @@ import numpy
 import pandas
 import pymbar
 from openmm import unit
-from proteinbenchmark import benchmark_targets
 from pymbar import timeseries
 
 
@@ -127,7 +126,7 @@ def run_mbar(
     "-c",
     "--cumulative-directory",
     type=click.STRING,
-    default="reweight-scalar-couplings",
+    default="reweight-gaussian-observable",
     show_default=True,
     help="Directory containing reweighting potentials for cumulative force "
         "fields.",
@@ -145,7 +144,7 @@ def run_mbar(
     "-f",
     "--force-fields",
     type=click.STRING,
-    default="null-0.0.3-pair-nmr-1e4-opc3,null-0.0.3-pair-opc3",
+    default="null-0.0.3-pair-nmr-1e-3-opc3,null-0.0.3-pair-opc3",
     show_default=True,
     help="Comma-separated list of force field names used to sample "
         "trajectories.",
@@ -178,7 +177,7 @@ def run_mbar(
     "-t",
     "--target",
     type=click.STRING,
-    default="gb3",
+    default="butane",
     show_default=True,
     help="Name of benchmark target.",
 )
@@ -186,7 +185,7 @@ def run_mbar(
     "-w",
     "--bin-width",
     type=click.FLOAT,
-    default=0.002,
+    default=numpy.deg2rad(1.5),
     show_default=True,
     help="Width of histogram bins for free energy surface.",
 )
@@ -202,16 +201,12 @@ def main(
     bin_width,
 ):
     mbar_str = "mbar"
-    if "-0.7-" in force_fields:
-        mbar_str = f"{mbar_str}-0.7"
-    elif "-0.8-" in force_fields:
-        mbar_str = f"{mbar_str}-0.8"
     if replica_to_analyze is not None:
         mbar_str = f"{mbar_str}-{replica_to_analyze}"
 
     force_fields = force_fields.strip("'\"").split(",")
 
-    temperature = benchmark_targets[target]["temperature"].to_openmm()
+    temperature = 298.0 * unit.kelvin
     RT = unit.MOLAR_GAS_CONSTANT_R * temperature
     beta = 1.0 / RT.value_in_unit(unit.kilocalorie_per_mole)
 
@@ -221,13 +216,13 @@ def main(
     umbrella_energy_constants = list()
 
     N_samples = list()
-    fraction_native_contacts = list()
+    dihedral_cv = list()
     sample_force_fields = list()
     sample_replicas = list()
     sample_windows = list()
 
     N_uncorrelated_samples = list()
-    uncorrelated_fraction_native_contacts = list()
+    uncorrelated_dihedral_cv = list()
     uncorrelated_sample_force_fields = list()
     uncorrelated_sample_replicas = list()
     uncorrelated_sample_windows = list()
@@ -259,15 +254,15 @@ def main(
             index_col=0,
         )
 
-        fraction_native_contacts.extend(
-            mbar_samples_df["Fraction Native Contacts"].values
+        dihedral_cv.extend(
+            mbar_samples_df["Dihedral CV"].values
         )
         sample_force_fields.extend([force_field] * mbar_samples_df.shape[0])
         sample_replicas.extend(mbar_samples_df["Replica"].values)
         sample_windows.extend(mbar_samples_df["Window"].values)
 
-        uncorrelated_fraction_native_contacts.extend(
-            mbar_uncorrelated_samples_df["Fraction Native Contacts"].values
+        uncorrelated_dihedral_cv.extend(
+            mbar_uncorrelated_samples_df["Dihedral CV"].values
         )
         uncorrelated_sample_force_fields.extend(
             [force_field] * mbar_uncorrelated_samples_df.shape[0]
@@ -329,28 +324,30 @@ def main(
     umbrella_energy_constants = numpy.array(umbrella_energy_constants)
     window_centers = numpy.array(window_centers)
     N_samples = numpy.array(N_samples, dtype=int)
-    fraction_native_contacts = numpy.array(fraction_native_contacts)
+    dihedral_cv = numpy.array(dihedral_cv)
     N_uncorrelated_samples = numpy.array(N_uncorrelated_samples, dtype=int)
-    uncorrelated_fraction_native_contacts = numpy.array(
-        uncorrelated_fraction_native_contacts
-    )
+    uncorrelated_dihedral_cv = numpy.array(uncorrelated_dihedral_cv)
     bootstrap_sample_indices = numpy.array(bootstrap_sample_indices).T
 
     N_total_samples = N_samples.sum()
     N_total_uncorrelated_samples = N_uncorrelated_samples.sum()
 
     # Evaluate the bias potentials for samples from all windows
+    delta_phi = numpy.abs(dihedral_cv - window_centers[:, numpy.newaxis])
     reduced_bias_potentials = (
         umbrella_energy_constants[:, numpy.newaxis]
-        * numpy.square(
-            fraction_native_contacts - window_centers[:, numpy.newaxis]
-        )
+        * numpy.square(numpy.min([delta_phi, 2 * numpy.pi - delta_phi], axis=0))
+    )
+
+    uncorrelated_delta_phi = numpy.abs(
+        uncorrelated_dihedral_cv - window_centers[:, numpy.newaxis]
     )
     uncorrelated_reduced_bias_potentials = (
-        umbrella_energy_constants[:, numpy.newaxis]
-        * numpy.square(
-            uncorrelated_fraction_native_contacts
-            - window_centers[:, numpy.newaxis]
+        umbrella_energy_constants[:, numpy.newaxis] * numpy.square(
+            numpy.min(
+                [uncorrelated_delta_phi, 2 * numpy.pi - uncorrelated_delta_phi],
+                axis=0,
+            )
         )
     )
 
@@ -438,8 +435,8 @@ def main(
         uncorrelated_sample_index += column_N_uncorrelated_samples
 
     # Get centers of bins at which to evaluate the unbiased free energy surface
-    min_x = numpy.floor(fraction_native_contacts.min() / bin_width) * bin_width
-    max_x = numpy.ceil(fraction_native_contacts.max() / bin_width) * bin_width
+    min_x = numpy.floor(dihedral_cv.min() / bin_width) * bin_width
+    max_x = numpy.ceil(dihedral_cv.max() / bin_width) * bin_width
     bin_centers = numpy.arange(min_x + bin_width / 2, max_x, bin_width)
 
     # Run MBAR to get window offsets, the unbiased free energy surface, MBAR
@@ -448,7 +445,7 @@ def main(
     window_offsets, unbiased_free_energy_surface, Z, N_eff = run_mbar(
         reduced_bias_potentials,
         N_samples,
-        fraction_native_contacts,
+        dihedral_cv,
         bin_centers,
         bin_width,
     )
@@ -483,14 +480,14 @@ def main(
         "Replica": uncorrelated_sample_replicas,
         "Window": uncorrelated_sample_windows,
         "Indices": uncorrelated_sample_indices,
-        "Fraction Native Contacts": uncorrelated_fraction_native_contacts,
+        "Dihedral CV": uncorrelated_dihedral_cv,
     }
 
     for bootstrap_index, resampled_indices in enumerate(bootstrap_sample_indices):
         bootstrap_mbar_output = run_mbar(
             uncorrelated_reduced_bias_potentials[:, resampled_indices],
             N_uncorrelated_samples,
-            uncorrelated_fraction_native_contacts[resampled_indices],
+            uncorrelated_dihedral_cv[resampled_indices],
             bin_centers,
             bin_width,
             initial_window_offsets=window_offsets,
@@ -559,7 +556,7 @@ def main(
             "Force Field": sample_force_fields,
             "Replica": sample_replicas,
             "Window": sample_windows,
-            "Fraction Native Contacts": fraction_native_contacts,
+            "Dihedral CV": dihedral_cv,
             "MBAR Weight Denominator": Z,
         }
     )
@@ -576,12 +573,12 @@ def main(
 
     # Compute expectations of observables in the unbiased state
     # expectation_result = mbar_fes.get_mbar().compute_expectations(
-    #     fraction_native_contacts,
+    #     dihedral_cv,
     #     uncertainty_method="bootstrap",
     # )
     # expectation = expectation_result["mu"]
     # expectation_uncertainty = expectation_result["sigma"]
-    # expectation = numpy.sum(unbiased_weights * fraction_native_contacts)
+    # expectation = numpy.sum(unbiased_weights * dihedral_cv)
 
 
 if __name__ == "__main__":

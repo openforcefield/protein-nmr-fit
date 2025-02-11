@@ -56,7 +56,12 @@ def main(
 ):
     # Set up system parameters
     force_field_dict = force_fields["null-0.0.3-pair-opc3"]
-    force_field_file = str(Path("gaussian-force-fields", f"{force_field}.offxml"))
+    if force_field == "null-0.0.3-pair-opc3":
+        force_field_file = force_field_dict["force_field_file"]
+    else:
+        force_field_file = str(
+            Path("gaussian-force-fields", f"{force_field}.offxml")
+        )
     water_model = force_field_dict["water_model"]
     water_model_file = force_field_dict["water_model_file"]
 
